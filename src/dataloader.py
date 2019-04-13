@@ -1,4 +1,8 @@
+import os
+from PIL import Image
+
 import pandas as pd
+import torch
 from torch.utils import data
 import numpy as np
 
@@ -27,7 +31,8 @@ class RetinopathyLoader(data.Dataset):
         self.root = root
         self.img_name, self.label = getData(mode)
         self.mode = mode
-        print("> Found %d images..." % (len(self.img_name)))
+        self.data_size = len(self.img_name)
+        print("> %s Found %d images..." % (mode, len(self.img_name)))
 
     def __len__(self):
         """'return the size of dataset"""
@@ -53,5 +58,8 @@ class RetinopathyLoader(data.Dataset):
                          
             step4. Return processed image and label
         """
+        img = Image.open(os.path.join(self.root, self.img_name[index] + '.jpeg')).convert('RGB')
+        img = np.asarray(img).transpose(2,0,1)/255.0
+        label = self.label[index]
 
         return img, label
