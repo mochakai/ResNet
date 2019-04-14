@@ -85,17 +85,7 @@ class ResNet(nn.Module):
         self.layer3 = self._customize_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._customize_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AvgPool2d(7, stride=1)
-        # self.dropout = nn.Dropout2d(p=0.5,inplace=True)
-
         self.fc = nn.Linear(51200 * block.out_extend, out_class)
-
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv2d):
-        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-        #         m.weight.data.normal_(0, math.sqrt(2. / n))
-        #     elif isinstance(m, nn.BatchNorm2d):
-        #         m.weight.data.fill_(1)
-        #         m.bias.data.zero_()
 
     def _customize_layer(self, block, planes, blocks, stride=1):
         downsample = None
@@ -125,7 +115,6 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         x = self.avgpool(x)
-        # x = self.dropout(x)
         res = x.view(x.size(0), -1)
         out = self.fc(res)
         return out
@@ -136,16 +125,20 @@ def test_accuracy(net, dataset):
     test_size = dataset.data_size
     # test_size = 100
     accuracy_res = []
+    pred_list = []
+    gt_list = []
     for index in range(test_size):
         x, gt = dataset[index]
         t_x = torch.unsqueeze(torch.tensor(x), dim=0).type(torch.FloatTensor).to(device)
         pred_y = net(t_x)
         pred_y = torch.max(pred_y.cpu(), 1)[1].data.numpy()[0]
         accuracy_res.append(pred_y == gt)
+        pred_list.append(int(pred_y))
+        gt_list.append(int(gt))
 
     accuracy = float(np.array(accuracy_res).astype(int).sum()) / float(test_size)
     net.train()
-    return accuracy * 100
+    return accuracy * 100, pred_list, gt_list
 
 
 def train_accuracy(pred_y, gt):
@@ -161,15 +154,17 @@ def handle_param(args):
             net = ResNet(BasicBlock, [2, 2, 2, 2])
         else:
             net = models.resnet18(pretrained=True)
-            net.fc = nn.Linear(51200, 5)
+            net.avgpool = nn.AdaptiveAvgPool2d(1)
+            net.fc = nn.Linear(512, 5)
     elif args.model == 'resnet50':
         if args.untrained:
             net = ResNet(Bottleneck, [3, 4, 6, 3])
         else:
             net = models.resnet50(pretrained=True)
-            net.fc = nn.Linear(51200, 5)
+            net.avgpool = nn.AdaptiveAvgPool2d(1)
+            net.fc = nn.Linear(512 * 4, 5)
     else:
-        raise TypeError('model type not defined.')
+        raise TypeError('Error: {} model type not defined.'.format(args.model))
 
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(
@@ -184,12 +179,12 @@ def handle_param(args):
                         net.parameters(), lr=args.learning_rate, 
                         momentum=args.momentum, weight_decay=args.weight_decay)
     else:
-        raise TypeError('optimizer type not defined.')
+        raise TypeError('Error: {} optimizer type not defined.'.format(args.optimizer))
 
     if args.loss_function == 'CrossEntropy':
         loss_function = nn.CrossEntropyLoss()
     else:
-        raise TypeError('loss_function type not defined.')
+        raise TypeError('Error: {} loss_function type not defined.'.format(args.loss_function))
     return net.to(device), optimizer, loss_function
 
 
@@ -198,21 +193,30 @@ def main(args):
     test_data = RetinopathyLoader('data', 'test')
     train_loader = Data.DataLoader(dataset=train_data, batch_size=args.batch, shuffle=True)
     net, optimizer, loss_function = handle_param(args)
-    full_step = ((train_data.data_size // args.batch) + ((train_data.data_size % args.batch)>0)) * args.epochs
+    full_step = ((train_data.data_size // args.batch) +\
+                ((train_data.data_size % args.batch)>0)) * args.epochs
 
+    train_tag = '_untrained' if args.untrained else '_pretrained'
+    file_name = args.model + train_tag + '_' +\
+                args.optimizer + '_ep' + str(args.epochs) +\
+                '_lr' + str(args.learning_rate) + '_wd' + str(args.weight_decay)
     if args.load:
         net.load_state_dict(torch.load(args.load))
-        test_acc = test_accuracy(net, test_data)
+        test_acc, pred, gt = test_accuracy(net, test_data)
+
+        with open(args.model + train_tag + '.json', 'w') as f:
+            json.dump({
+                'pred_y': pred,
+                'gt': gt,
+                'class': list(range(5)),
+            }, f)
         print('test_acc: {:.4f} %'.format(test_acc))
         return
     # start training
     max_acc = 0
     count = 0
-    train_tag = '_untrained' if args.untrained else '_pretrained'
-    file_name = args.model + train_tag + '_' + args.optimizer + \
-                '_lr' + str(args.learning_rate) + '_wd' + str(args.weight_decay)
     acc_dict = {'train'+train_tag: [], 'test'+train_tag: []}
-    
+
     print(datetime.now().strftime("%m-%d %H:%M"), 'start training...')
     for epoch in range(args.epochs):
         print('-'*10, 'epoch', epoch+1, '-'*10)
@@ -234,7 +238,7 @@ def main(args):
                 print('({} / {}) loss: {:.4f} | train_acc: {:.2f} %'.format(
                         count, full_step, loss, train_accuracy(y_list, gt_list)))
 
-        test_acc = test_accuracy(net, test_data)
+        test_acc, _, _ = test_accuracy(net, test_data)
         if test_acc > max_acc:
             max_acc = test_acc
             torch.save(net.state_dict(), file_name + '.pkl')
@@ -242,8 +246,7 @@ def main(args):
         acc_dict['test'+train_tag].append(test_acc)
         print(datetime.now().strftime("%m-%d %H:%M"))
         print('({} / {}) train_acc: {:.2f} % | test_acc: {:.2f} %'.format(
-                count, full_step, test_acc, train_accuracy(y_list, gt_list)))
-
+                count, full_step, train_accuracy(y_list, gt_list), test_acc))
 
     with open(file_name + '.json', 'w') as f:
         json.dump({

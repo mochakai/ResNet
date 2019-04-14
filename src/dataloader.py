@@ -1,5 +1,6 @@
 import os
 from PIL import Image
+import random
 
 import pandas as pd
 import torch
@@ -59,6 +60,8 @@ class RetinopathyLoader(data.Dataset):
             step4. Return processed image and label
         """
         img = Image.open(os.path.join(self.root, self.img_name[index] + '.jpeg')).convert('RGB')
+        if self.mode == 'train':
+            img = img.transpose(Image.FLIP_LEFT_RIGHT) if random.random() < 0.5 else img
         img = np.asarray(img).transpose(2,0,1)/255.0
         label = self.label[index]
 
