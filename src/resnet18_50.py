@@ -1,7 +1,7 @@
 import os
 import sys
 from argparse import ArgumentParser
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 
 import numpy as np
@@ -198,7 +198,7 @@ def main(args):
 
     train_tag = '_untrained' if args.untrained else '_pretrained'
     file_name = args.model + train_tag + '_' +\
-                args.optimizer + '_ep' + str(args.epochs) +\
+                args.optimizer + '_ep' + str(args.epochs) + '_b' + str(args.batch) +\
                 '_lr' + str(args.learning_rate) + '_wd' + str(args.weight_decay)
     if args.load:
         net.load_state_dict(torch.load(args.load))
@@ -217,7 +217,7 @@ def main(args):
     count = 0
     acc_dict = {'train'+train_tag: [], 'test'+train_tag: []}
 
-    print(datetime.now().strftime("%m-%d %H:%M"), 'start training...')
+    print(datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M"), 'start training...')
     for epoch in range(args.epochs):
         print('-'*10, 'epoch', epoch+1, '-'*10)
         y_list, gt_list = [], []
@@ -242,18 +242,18 @@ def main(args):
         if test_acc > max_acc:
             max_acc = test_acc
             torch.save(net.state_dict(), file_name + '.pkl')
-        acc_dict['train'+train_tag].append(train_accuracy(y_list, gt_list))
-        acc_dict['test'+train_tag].append(test_acc)
+        acc_dict['train'].append(train_accuracy(y_list, gt_list))
+        acc_dict['test'].append(test_acc)
         print(datetime.now().strftime("%m-%d %H:%M"))
         print('({} / {}) train_acc: {:.2f} % | test_acc: {:.2f} %'.format(
                 count, full_step, train_accuracy(y_list, gt_list), test_acc))
-
-    with open(file_name + '.json', 'w') as f:
-        json.dump({
-            'x': list(range(args.epochs)),
-            'y_dict': acc_dict,
-            'title': args.model + train_tag,
-        }, f)
+        with open(file_name + '.json', 'w') as f:
+            json.dump({
+                'x': list(range(args.epochs)),
+                'y_dict': acc_dict,
+                'title': args.model + train_tag,
+            }, f)
+    print('[*] max test accuracy: {} %'.format(max_acc))
 
 
 def get_args():
