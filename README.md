@@ -5,6 +5,8 @@ the following three steps.
 * Second, classify diabetic retinopathy grading via the ResNet architecture(ResNet18 & ResNet50). 
 * Finally, calculate the confusion matrix to evaluate the performance.
 
+* my data is from [Dataset- Diabetic Retinopathy Detection (kaggle)](https://www.kaggle.com/c/diabetic-retinopathy-detection#description) & [Data download link](https://drive.google.com/open?id=1RTmrk7Qu9IBjQYLczaYKOvXaHWBS0o72)
+
 
 ## resnet18_50.py
 It will auto save the __pkl file__ of highest accruary of test data every epoch, and finally save __json file__ of each epoch performance.
